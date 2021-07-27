@@ -19,16 +19,29 @@ def train_transformer(train_dir):
     train_data = datasets.ImageFolder(train_dir, transform=train_transforms)
 
     return train_data
+
 def gpu():
-    if (args.gpu):
+    if args.gpu and torch.cuda.is_available():
         device = 'cuda'
-        print("running on gpu")
+        print("running on GPU")
     else:
         device = 'cpu'
-        print("running on cpu")
+        print("running on CPU")
         
-    return 0 
-    
+    return device
+
+def parse():
+    parser = argparse.ArgumentParser(description='Train a neural network with open of many options')
+    parser.add_argument('--data_directory', default="flowers", help='data directory (required)')
+    parser.add_argument('--save_dir', help='directory to save a neural network.')
+    parser.add_argument('--arch', help='models to use OPTIONS[vgg,densenet]')
+    parser.add_argument('--learning_rate', type=float, help='learning rate')
+    parser.add_argument('--hidden_units',type=int, help='number of hidden units')
+    parser.add_argument('--epochs', type=int, help='epochs')
+    parser.add_argument('--gpu',action='store_true', help='gpu')
+    args = parser.parse_args()
+    return args
+
 def def_data(data_dir):
     print("processing data into training data, test data, validation data and labels")
     train_dir, test_dir, valid_dir = data_dir 
@@ -72,12 +85,11 @@ def getdata():
     data_dir = [train_dir,test_dir,valid_dir]
     return def_data(data_dir)
 
-
-def specify_model(data): #model specification
+#model specification (pre trained)
+def specify_model(data): 
         
     if (args.arch is None):
-        arch_type = 'densenet'
-       
+        arch_type = 'densenet'       
     else:
         arch_type = args.arch
     if (arch_type == 'densenet'):
@@ -92,19 +104,20 @@ def specify_model(data): #model specification
         hidden_units = 512
     else:
         hidden_units = args.hidden_units
+        
     for param in model.parameters():
         param.requires_grad = False
     hidden_units = int(hidden_units)
+    output_node=len(class_to_idx)
     
-    classifier= nn.Sequential(nn.Linear(1024,512),
+    classifier= nn.Sequential(nn.Linear(input_node,hidden_units),
                           nn.ReLU(),
                           nn.Dropout(p=0.5),
-                          nn.Linear(512, 102),
+                          nn.Linear(hidden_units, output_node),
                           nn.LogSoftmax(dim=1))
     model.classifier = classifier
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    
+    device=gpu()
     model.to(device);
     criterion = nn.NLLLoss()
     if (args.learning_rate is None):
@@ -115,7 +128,7 @@ def specify_model(data): #model specification
     return model
 
 def validation(model, testloader, criterion): 
-    device = torch.device("cuda" if args.gpu else "cpu")#("cuda:0" if torch.cuda.is_available() else "cpu")
+    device=gpu()
     model.to(device);
     test_loss = 0
     accuracy = 0
@@ -143,7 +156,7 @@ def train(model,data):
     
     print_every=10
     steps = 0
-    epochs = 3
+    
     if (args.learning_rate is None):
         learn_rate = 0.001
     else:
@@ -152,10 +165,7 @@ def train(model,data):
         epochs = 3
     else:
         epochs = args.epochs
-    if (args.gpu):
-        device = 'cuda'
-    else:
-        device = 'cpu'
+    device=gpu()
 
      
     trainloader=data['train']
@@ -167,25 +177,23 @@ def train(model,data):
 
     model.to(device)
     
-    for e in range(epochs):
-        #device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    for e in range(epochs):        
 
-        running_loss = 0 #doing this to calculate loss during training
-        model.train() # Technically not necessary, setting this for good measure
-
+        running_loss = 0 #calculate loss during training
+        model.train()
 
         for images, labels in iter(trainloader):
             steps += 1
 
             images, labels = images.to(device), labels.to(device)
 
-            optimizer.zero_grad()#Clears the gradients, do this because gradients are accumulated
+            optimizer.zero_grad()
 
-            # Forward and backward passes
-            outputs = model.forward(images)#passing our images
-            loss = criterion(outputs, labels)#calculated loss necessary to calculate the gradient
-            loss.backward()#calculates the gradients
-            optimizer.step()#then with the gradients you can take a step to update the weights
+            # Forward and backward pass
+            outputs = model.forward(images)#passing images
+            loss = criterion(outputs, labels)#calculated loss 
+            loss.backward()#calculates gradients
+            optimizer.step()#update the weights
 
             running_loss += loss.item()
 
@@ -213,35 +221,18 @@ def save(model,train_data):
         save_dir = args.save_dir
 
     model.class_to_idx = train_data.class_to_idx
-    torch.save(model.state_dict(), save_dir)
-    if type(args.learning_rate) == type(None):
-        learning_rate = 0.001
         
-    else: learning_rate = args.learning_rate
-    
-    criterion = nn.NLLLoss()
-    data =getdata()
-    model=specify_model(data)
-    optimizer = optim.Adam(model.classifier.parameters(), lr=learning_rate)
-    
-    
     checkpoint = {'arch': model.name,
                   'model': model,
                   'classifier': model.classifier,
-                  #'input_size': 1024,
-                  #'output_size': 1,
-                  #'epochs':3,
                   'features': model.features,
-                  #'hidden_layers': [each.out_features for each in model.hidden_layers],
                   'class_to_idx': train_data.class_to_idx,
-                  #'dropout':0.5,
-                  'state_dict': model.state_dict(),
-                  'optimizer_dict':optimizer.state_dict()}
+                  'state_dict': model.state_dict()}
     torch.save(checkpoint, save_dir)
     return 0
 
 def create_model():
-    gpu()
+    device =gpu()
     data =getdata()
     
     model = specify_model(data)
@@ -250,23 +241,13 @@ def create_model():
     train_data = train_transformer(train_dir)
     save(model,train_data)
 
-def parse():
-    parser = argparse.ArgumentParser(description='Train a neural network with open of many options!')
-    parser.add_argument('--data_directory', default="flowers", help='data directory (required)')
-    parser.add_argument('--save_dir', help='directory to save a neural network.')
-    parser.add_argument('--arch', help='models to use OPTIONS[vgg,densenet]')
-    parser.add_argument('--learning_rate', help='learning rate')
-    parser.add_argument('--hidden_units', help='number of hidden units')
-    parser.add_argument('--epochs', help='epochs')
-    parser.add_argument('--gpu',action='store_true', help='gpu')
-    args = parser.parse_args()
-    return args
+
 
 def main():
 
     model = models.densenet121(pretrained=True)
     model.name = "densenet121"
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    device = gpu()
     model.to(device)
 
     print("creating an image classifier")
@@ -277,7 +258,7 @@ def main():
     train_data = train_transformer(train_dir)
     create_model()
     
-    print("\nModel finished with above 84% accuracy :)")
+    print("\nModel finished with" "Epoch: {}/{} | ".format(e+1, epochs), "Validation Accuracy: {:.3f}".format(accuracy/len(testloader)))
     return None
 
 main()
