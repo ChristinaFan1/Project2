@@ -96,10 +96,12 @@ def specify_model(data):
         model = models.densenet121(pretrained=True)
         model.name="densenet121"
         input_node=1024
+        output_node=102
     elif (arch_type == 'vgg'):
         model = models.vgg19(pretrained=True)
         model.name="vgg19"
         input_node=25088
+        output_node=500
     if (args.hidden_units is None):
         hidden_units = 512
     else:
@@ -108,7 +110,6 @@ def specify_model(data):
     for param in model.parameters():
         param.requires_grad = False
     hidden_units = int(hidden_units)
-    output_node=len(class_to_idx)
     
     classifier= nn.Sequential(nn.Linear(input_node,hidden_units),
                           nn.ReLU(),
@@ -245,20 +246,22 @@ def create_model():
 
 def main():
 
+    
     model = models.densenet121(pretrained=True)
     model.name = "densenet121"
-    device = gpu()
-    model.to(device)
-
     print("creating an image classifier")
     global args
     args = parse()
-    gpu()
+    device = gpu()
+    
+    
     train_dir = args.data_directory + '/train'
     train_data = train_transformer(train_dir)
+    model=specify_model(train_data)
+    model.to(device)
     create_model()
-    
-    print("\nModel finished with" "Epoch: {}/{} | ".format(e+1, epochs), "Validation Accuracy: {:.3f}".format(accuracy/len(testloader)))
+    print(model)
     return None
 
-main()
+if __name__ == "__main__":
+    main()
